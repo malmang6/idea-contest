@@ -3,6 +3,7 @@ import {
   validateApplication,
   type ApplicationInput,
 } from "@/lib/validation";
+import { runReview, type ReviewInput } from "@/lib/review";
 
 // 서버 전용 코드. AIRTABLE_TOKEN은 이 파일에서만 읽는다. 화면 코드로 가져가지 않는다.
 // 자동 재시도는 하지 않는다. 실패하면 한 번 실패로 응답하고 사용자가 직접 다시 제출한다.
@@ -103,8 +104,66 @@ export async function POST(request: Request) {
 
   const data = (await res.json()) as { records?: { id: string }[] };
   const recordId = data.records?.[0]?.id ?? "";
+
+  // 응모는 이미 저장됐다. AI 검토는 같은 요청 안에서 1회만 시도하고, 실패해도 응모 응답은 성공으로 둔다.
+  if (recordId) {
+    await attachReview(recordId, token, baseId, table, {
+      team_name: fields.team_name,
+      idea_title: fields.idea_title,
+      idea_summary: fields.idea_summary,
+      expected_effect: fields.expected_effect,
+    });
+  }
+
   return Response.json({
     ok: true,
     receiptNo: recordId.slice(0, 8),
   });
+}
+
+// AI 결과를 같은 레코드에 기록한다. 실패하면 AI 칸은 비우고 ai_status만 "실패"로 남긴다.
+async function attachReview(
+  recordId: string,
+  token: string,
+  baseId: string,
+  table: string,
+  input: ReviewInput
+) {
+  const outcome = await runReview(input);
+  const aiFields = outcome.ok
+    ? {
+        ai_field: outcome.result.field,
+        ai_score: outcome.result.score,
+        ai_score_reason: outcome.result.score_reason,
+        ai_review: outcome.result.review,
+        ai_status: "성공",
+      }
+    : {
+        ai_field: null,
+        ai_score: null,
+        ai_score_reason: null,
+        ai_review: null,
+        ai_status: "실패",
+      };
+
+  try {
+    const res = await fetch(
+      `https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fields: aiFields }),
+        signal: AbortSignal.timeout(AIRTABLE_TIMEOUT_MS),
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) {
+      console.error(`apply: AI 결과 기록 실패 status=${res.status}`);
+    }
+  } catch {
+    console.error("apply: AI 결과 기록 중 연결 실패");
+  }
 }
