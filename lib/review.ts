@@ -1,16 +1,9 @@
 // AI 1차 검토 (서버 전용). API 키는 GEMINI_API_KEY 환경변수에서만 읽는다.
 // 호출은 1회만 하고 재시도하지 않는다. 결과는 docs/02 §5 규칙으로 검증한다.
 
-export const FIELD_CODES = ["DETECT", "EDU", "POLICY", "SPREAD"] as const;
-export type FieldCode = (typeof FIELD_CODES)[number];
+import { FIELD_CODES, FIELD_LABELS, type FieldCode } from "@/lib/fields";
 
-// Airtable ai_field 단일 선택지는 한글 표시명과 글자까지 같아야 저장된다 (코드 값은 422로 거부됨).
-export const FIELD_LABELS: Record<FieldCode, string> = {
-  DETECT: "탐지·검증 기술",
-  EDU: "교육·미디어 리터러시",
-  POLICY: "제도·정책",
-  SPREAD: "확산 차단·커뮤니티",
-};
+export { FIELD_CODES, FIELD_LABELS, type FieldCode };
 
 export type ReviewResult = {
   field: FieldCode;
