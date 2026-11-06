@@ -15,7 +15,9 @@ const FIELD_CLASS =
 export default function ApplyForm() {
   const [form, setForm] = useState<ApplicationInput>(EMPTY_APPLICATION);
   const [errors, setErrors] = useState<ApplicationErrors>({});
-  const [status, setStatus] = useState<"idle" | "ready">("idle");
+  const [status, setStatus] = useState<"idle" | "submitting" | "done" | "failed">("idle");
+  const [serverMessage, setServerMessage] = useState<string>("");
+  const [receiptNo, setReceiptNo] = useState<string>("");
 
   function update<K extends keyof ApplicationInput>(key: K, value: ApplicationInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -24,14 +26,61 @@ export default function ApplyForm() {
       delete next[key];
       return next;
     });
-    setStatus("idle");
+    if (status !== "submitting") setStatus("idle");
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  // 한 번 누르면 응답이 올 때까지 버튼을 막는다. 실패해도 자동으로 다시 보내지 않는다.
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (status === "submitting" || status === "done") return;
+
     const found = validateApplication(form);
     setErrors(found);
-    setStatus(hasErrors(found) ? "idle" : "ready");
+    if (hasErrors(found)) {
+      setStatus("idle");
+      return;
+    }
+
+    setStatus("submitting");
+    setServerMessage("");
+    try {
+      const res = await fetch("/api/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        message?: string;
+        receiptNo?: string;
+        errors?: ApplicationErrors;
+      };
+      if (data.ok) {
+        setReceiptNo(data.receiptNo ?? "");
+        setStatus("done");
+        return;
+      }
+      if (data.errors) setErrors(data.errors);
+      setServerMessage(data.message ?? "접수에 실패했습니다. 잠시 후 다시 제출해 주세요.");
+      setStatus("failed");
+    } catch {
+      setServerMessage("접수에 실패했습니다. 잠시 후 다시 제출해 주세요.");
+      setStatus("failed");
+    }
+  }
+
+  if (status === "done") {
+    return (
+      <div className="mt-8 rounded-md border border-emerald-300 bg-emerald-50 p-5 text-emerald-900">
+        <p className="font-semibold">접수가 완료되었습니다.</p>
+        <p className="mt-2 text-sm">
+          접수 번호: <span className="font-mono">{receiptNo || "-"}</span>
+        </p>
+        <p className="mt-2 text-xs text-emerald-800">
+          AI 검토 결과는 초안이며, 최종 심사는 담당자가 합니다.
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -114,14 +163,15 @@ export default function ApplyForm() {
 
       <button
         type="submit"
-        className="rounded-md bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-700"
+        disabled={status === "submitting"}
+        className="rounded-md bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
       >
-        접수 전 확인
+        {status === "submitting" ? "제출 중..." : "응모 제출"}
       </button>
 
-      {status === "ready" && (
-        <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
-          입력 내용이 모두 올바릅니다. 접수 저장 기능은 다음 단계에서 연결됩니다.
+      {status === "failed" && (
+        <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          {serverMessage}
         </p>
       )}
     </form>
