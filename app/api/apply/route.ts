@@ -3,7 +3,7 @@ import {
   validateApplication,
   type ApplicationInput,
 } from "@/lib/validation";
-import { runReview, type ReviewInput } from "@/lib/review";
+import { FIELD_LABELS, runReview, type ReviewInput } from "@/lib/review";
 
 // 서버 전용 코드. AIRTABLE_TOKEN은 이 파일에서만 읽는다. 화면 코드로 가져가지 않는다.
 // 자동 재시도는 하지 않는다. 실패하면 한 번 실패로 응답하고 사용자가 직접 다시 제출한다.
@@ -132,7 +132,7 @@ async function attachReview(
   const outcome = await runReview(input);
   const aiFields = outcome.ok
     ? {
-        ai_field: outcome.result.field,
+        ai_field: FIELD_LABELS[outcome.result.field],
         ai_score: outcome.result.score,
         ai_score_reason: outcome.result.score_reason,
         ai_review: outcome.result.review,
